@@ -15,42 +15,9 @@
 
 <main class="wrap">
 
-  <!-- STEP 1: settings -->
-  <section class="card" id="step-settings">
-    <h2>1. Настройки доступа к нейросети (OpenRouter)</h2>
-    <div class="row">
-      <label>API-ключ OpenRouter
-        <input type="password" id="apiKey" placeholder="Вставьте ключ (хранится только в этом браузере)">
-      </label>
-      <label class="narrow">Модель
-        <input type="text" id="model" list="modelPresets" value="openrouter/free">
-        <datalist id="modelPresets">
-          <option value="openrouter/free">
-          <option value="nvidia/nemotron-3-super-120b-a12b:free">
-          <option value="openai/gpt-oss-20b:free">
-          <option value="google/gemma-4-31b-it:free">
-          <option value="nvidia/nemotron-3-nano-30b-a3b:free">
-        </datalist>
-      </label>
-    </div>
-    <p class="hint">Бесплатный ключ можно получить на <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener">openrouter.ai/settings/keys</a> (регистрация по email, карта не нужна для бесплатных моделей). По умолчанию используется <code>openrouter/free</code> — служебный «роутер», который сам выбирает доступную сейчас бесплатную модель, поэтому обычно ничего менять не нужно, даже если конкретные бесплатные модели со временем меняются. Если хочется зафиксировать конкретную модель — список актуальных бесплатных на <a href="https://openrouter.ai/models?max_price=0" target="_blank" rel="noopener">openrouter.ai/models?max_price=0</a>, идентификатор вставляется в поле «Модель». Ключ сохраняется только локально в вашем браузере и никуда не отправляется, кроме OpenRouter.</p>
-    <details class="advanced">
-      <summary>Дополнительные настройки (размер пакета, скорость запросов)</summary>
-      <div class="row">
-        <label class="narrow">Статей за один запрос
-          <input type="number" id="batchSize" value="10" min="1" max="50">
-        </label>
-        <label class="narrow">Пауза между запросами, мс
-          <input type="number" id="delayMs" value="3000" min="0" max="60000" step="100">
-        </label>
-      </div>
-      <p class="hint">У бесплатных моделей OpenRouter есть лимит запросов в минуту/день. Если будут ошибки 429 (превышен лимит), увеличьте паузу или уменьшите размер пакета — система также сама делает повторные попытки. Если модель постоянно возвращает ошибки, попробуйте другую из списка выше.</p>
-    </details>
-  </section>
-
-  <!-- STEP 2: upload -->
+  <!-- STEP 1: upload -->
   <section class="card" id="step-upload">
-    <h2>2. Загрузка списка статей</h2>
+    <h2>1. Загрузка списка статей</h2>
     <p class="hint">Файл CSV или Excel (.xlsx) с колонками: название статьи, код/DOI/ссылка, и опционально — аннотация.</p>
     <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
     <div id="uploadInfo"></div>
@@ -73,9 +40,9 @@
     </div>
   </section>
 
-  <!-- STEP 3: enrichment -->
+  <!-- STEP 2: enrichment -->
   <section class="card hidden" id="step-enrich">
-    <h2>3. Аннотации (необязательно)</h2>
+    <h2>2. Аннотации (необязательно)</h2>
     <p class="hint">Если в файле нет аннотаций, но есть DOI, можно попробовать автоматически подтянуть аннотации через открытый сервис Semantic Scholar. Это увеличивает точность отбора, но занимает время (10 000 статей ≈ несколько часов из-за ограничений сервиса). Можно пропустить и анализировать только по названиям.</p>
     <div class="row">
       <button id="enrichBtn" class="secondary">Подтянуть аннотации по DOI</button>
@@ -88,9 +55,9 @@
     </div>
   </section>
 
-  <!-- STEP 4: criteria -->
+  <!-- STEP 3: criteria -->
   <section class="card hidden" id="step-criteria">
-    <h2>4. Критерии отбора</h2>
+    <h2>3. Критерии отбора</h2>
     <label>Опишите своими словами, какие статьи нужно включить, а какие исключить
       <textarea id="criteria" rows="6" placeholder="Например: включать статьи о применении машинного обучения в диагностике онкологических заболеваний, опубликованные после 2015 года. Исключать обзоры без собственных экспериментальных данных, статьи не по медицине, статьи на языках кроме русского и английского."></textarea>
     </label>
@@ -99,12 +66,34 @@
         <input type="number" id="targetN" value="100" min="1">
       </label>
     </div>
+    <details class="advanced">
+      <summary>Дополнительные настройки (для продвинутых)</summary>
+      <div class="row">
+        <label class="narrow">Модель нейросети
+          <input type="text" id="model" list="modelPresets" value="openrouter/free">
+          <datalist id="modelPresets">
+            <option value="openrouter/free">
+            <option value="nvidia/nemotron-3-super-120b-a12b:free">
+            <option value="openai/gpt-oss-20b:free">
+            <option value="google/gemma-4-31b-it:free">
+            <option value="nvidia/nemotron-3-nano-30b-a3b:free">
+          </datalist>
+        </label>
+        <label class="narrow">Статей за один запрос
+          <input type="number" id="batchSize" value="10" min="1" max="50">
+        </label>
+        <label class="narrow">Пауза между запросами, мс
+          <input type="number" id="delayMs" value="3000" min="0" max="60000" step="100">
+        </label>
+      </div>
+      <p class="hint">По умолчанию используется <code>openrouter/free</code> — служебный «роутер», который сам выбирает доступную сейчас бесплатную модель. У бесплатных моделей есть лимит запросов в минуту/день — если будут ошибки о превышении лимита, увеличьте паузу или уменьшите размер пакета.</p>
+    </details>
     <button id="startBtn" class="primary">Начать анализ статей нейросетью</button>
   </section>
 
-  <!-- STEP 5: run -->
+  <!-- STEP 4: run -->
   <section class="card hidden" id="step-run">
-    <h2>5. Анализ выполняется</h2>
+    <h2>4. Анализ выполняется</h2>
     <div class="progress">
       <div class="bar"><div class="fill" id="runFill"></div></div>
       <div class="progressText" id="runText">0 / 0</div>
@@ -122,9 +111,9 @@
     <div id="log" class="log"></div>
   </section>
 
-  <!-- STEP 6: results -->
+  <!-- STEP 5: results -->
   <section class="card hidden" id="step-results">
-    <h2>6. Результаты</h2>
+    <h2>5. Результаты</h2>
     <div class="row">
       <label class="narrow">Фильтр
         <select id="filterDecision">
@@ -157,7 +146,7 @@
 </main>
 
 <footer class="foot">
-  <p>Все данные и API-ключ хранятся только в вашем браузере (IndexedDB / localStorage). Ничего не отправляется на сторонние сервера, кроме прямых запросов к OpenRouter (и, при обогащении, к Semantic Scholar).</p>
+  <p>Загруженные статьи и результаты анализа хранятся только в вашем браузере (IndexedDB / localStorage). Ничего не отправляется на сторонние сервера, кроме прямых запросов к OpenRouter (и, при обогащении, к Semantic Scholar).</p>
 </footer>
 
 <script type="module" src="js/main.js"></script>

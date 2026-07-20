@@ -2,11 +2,12 @@ import * as db from './db.js';
 import { parseFile, guessMapping } from './parser.js';
 import { extractDoi, fetchAbstract } from './enrich.js';
 import { screenBatch } from './llm.js';
+import { OPENROUTER_API_KEY, DEFAULT_MODEL } from './config.js';
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const STEPS = ['step-settings', 'step-upload', 'step-enrich', 'step-criteria', 'step-run', 'step-results'];
+const STEPS = ['step-upload', 'step-enrich', 'step-criteria', 'step-run', 'step-results'];
 function reveal(id) {
   const idx = STEPS.indexOf(id);
   STEPS.forEach((s, i) => {
@@ -15,7 +16,7 @@ function reveal(id) {
 }
 
 // ---------- settings persistence ----------
-const SETTINGS_KEYS = ['apiKey', 'model', 'batchSize', 'delayMs', 'criteria', 'targetN'];
+const SETTINGS_KEYS = ['model', 'batchSize', 'delayMs', 'criteria', 'targetN'];
 function loadSettings() {
   for (const key of SETTINGS_KEYS) {
     const val = localStorage.getItem('as_' + key);
@@ -32,8 +33,8 @@ SETTINGS_KEYS.forEach((key) => {
 
 function getSettings() {
   return {
-    apiKey: $('apiKey').value.trim(),
-    model: $('model').value,
+    apiKey: OPENROUTER_API_KEY,
+    model: $('model').value.trim() || DEFAULT_MODEL,
     batchSize: Math.max(1, parseInt($('batchSize').value, 10) || 15),
     delayMs: Math.max(0, parseInt($('delayMs').value, 10) || 1000),
     criteria: $('criteria').value.trim(),
@@ -219,10 +220,6 @@ async function updateProgressUI() {
 
 async function runScreening() {
   const settings = getSettings();
-  if (!settings.apiKey) {
-    alert('Укажите API-ключ Google Gemini в настройках (шаг 1).');
-    return;
-  }
   if (!settings.criteria) {
     alert('Опишите критерии отбора статей.');
     return;
@@ -270,7 +267,7 @@ async function runScreening() {
       log(`Ошибка пакета (${batch.length} стат.): ${err.message}`);
       await db.updateMany(batch.map((a) => [a.id, { decision: 'error', score: null, reason: 'Ошибка API: ' + err.message.slice(0, 300) }]));
       if (/HTTP 400|HTTP 401|HTTP 403|API key|API_KEY/i.test(err.message)) {
-        alert('Похоже, проблема с API-ключом или названием модели: ' + err.message);
+        alert('Сервис анализа временно недоступен (проблема с доступом или названием модели): ' + err.message + '\n\nПопробуйте позже или обратитесь к тому, кто настраивал сайт.');
         stopRequested = true;
       }
     }
