@@ -97,7 +97,8 @@ details.advanced summary{cursor:pointer;color:var(--accent);font-size:.9rem}
 }
 table{width:100%;border-collapse:collapse;font-size:.86rem;margin-top:.75rem}
 table.preview{display:block;overflow-x:auto;white-space:nowrap}
-table.results{table-layout:fixed}
+.table-scroll{overflow-x:auto}
+table.results{table-layout:fixed;min-width:640px}
 th,td{
   text-align:left;
   padding:.5rem .6rem;
