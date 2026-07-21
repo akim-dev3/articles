@@ -42,20 +42,28 @@ export async function addArticles(rows) {
     await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite');
       const store = tx.objectStore(STORE);
-      for (const r of chunk) {
+      chunk.forEach((r, j) => {
         store.add({
+          rowNum: i + j + 1,
           title: r.title || '',
-          code: r.code || '',
+          link: r.link || '',
+          doi: r.doi || '',
           abstract: r.abstract || '',
           decision: 'pending',
           score: null,
           reason: ''
         });
-      }
+      });
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
   }
+}
+
+// ranges: массив пар [from, to] (включительно) или null/пусто — тогда ограничения нет
+function inRanges(rowNum, ranges) {
+  if (!ranges || ranges.length === 0) return true;
+  return ranges.some(([from, to]) => rowNum >= from && rowNum <= to);
 }
 
 export async function countAll() {
@@ -79,14 +87,33 @@ async function countByStatus(status) {
   });
 }
 
-export async function getCounts() {
-  const statuses = ['pending', 'include', 'maybe', 'exclude', 'error'];
-  const counts = {};
-  for (const s of statuses) counts[s] = await countByStatus(s);
-  return counts;
+export async function getCounts(ranges) {
+  if (!ranges || ranges.length === 0) {
+    const statuses = ['pending', 'include', 'maybe', 'exclude', 'error'];
+    const counts = {};
+    for (const s of statuses) counts[s] = await countByStatus(s);
+    return counts;
+  }
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).openCursor();
+    const counts = { pending: 0, include: 0, maybe: 0, exclude: 0, error: 0 };
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const v = cursor.value;
+        if (inRanges(v.rowNum, ranges)) counts[v.decision] = (counts[v.decision] || 0) + 1;
+        cursor.continue();
+      } else {
+        resolve(counts);
+      }
+    };
+    req.onerror = () => reject(req.error);
+  });
 }
 
-export async function getNextPending(limit) {
+export async function getNextPending(limit, ranges) {
   const db = await getDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly');
@@ -96,7 +123,7 @@ export async function getNextPending(limit) {
     req.onsuccess = (e) => {
       const cursor = e.target.result;
       if (cursor && results.length < limit) {
-        results.push(cursor.value);
+        if (inRanges(cursor.value.rowNum, ranges)) results.push(cursor.value);
         cursor.continue();
       } else {
         resolve(results);
@@ -118,8 +145,8 @@ export async function getMissingAbstractItems() {
       const cursor = e.target.result;
       if (cursor) {
         const v = cursor.value;
-        if ((!v.abstract || !v.abstract.trim()) && DOI_RE.test(v.code || '')) {
-          results.push({ id: v.id, code: v.code });
+        if ((!v.abstract || !v.abstract.trim()) && DOI_RE.test(v.doi || '')) {
+          results.push({ id: v.id, doi: v.doi });
         }
         cursor.continue();
       } else {
@@ -176,7 +203,7 @@ export async function getAll() {
   });
 }
 
-export async function getPage({ decision = 'all', search = '', offset = 0, limit = 50 }) {
+export async function getPage({ decision = 'all', search = '', ranges = null, offset = 0, limit = 50 }) {
   const db = await getDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly');
@@ -189,7 +216,8 @@ export async function getPage({ decision = 'all', search = '', offset = 0, limit
         const v = cursor.value;
         const okDecision = decision === 'all' || v.decision === decision;
         const okSearch = !q || (v.title || '').toLowerCase().includes(q);
-        if (okDecision && okSearch) matches.push(v);
+        const okRange = inRanges(v.rowNum, ranges);
+        if (okDecision && okSearch && okRange) matches.push(v);
         cursor.continue();
       } else {
         resolve({ total: matches.length, rows: matches.slice(offset, offset + limit) });

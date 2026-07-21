@@ -10,8 +10,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Понятные человеку подписи — используются и в таблице на экране, и при экспорте в CSV
 const DECISION_LABELS = { include: 'Включить', maybe: 'Под вопросом', exclude: 'Исключить', error: 'Ошибка', pending: 'В очереди' };
 const FIELD_LABELS = {
+  rowNum: '№',
   title: 'Название статьи',
-  code: 'Код / DOI / ссылка',
+  link: 'Ссылка',
+  doi: 'DOI',
   abstract: 'Аннотация',
   score: 'Оценка релевантности (0-100)',
   decision: 'Решение',
@@ -26,8 +28,29 @@ function reveal(id) {
   });
 }
 
+// Разбирает текст вида "2001-3000, 6501-8000\n13001-15000" в массив пар [from, to].
+// Пустая строка или отсутствие валидных диапазонов -> null (значит "без ограничения").
+function parseRanges(text) {
+  if (!text || !text.trim()) return null;
+  const ranges = [];
+  for (const part of text.split(/[,;\n]+/)) {
+    const p = part.trim();
+    if (!p) continue;
+    const m = p.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (m) {
+      const a = parseInt(m[1], 10);
+      const b = parseInt(m[2], 10);
+      ranges.push([Math.min(a, b), Math.max(a, b)]);
+    } else if (/^\d+$/.test(p)) {
+      const n = parseInt(p, 10);
+      ranges.push([n, n]);
+    }
+  }
+  return ranges.length ? ranges : null;
+}
+
 // ---------- settings persistence ----------
-const SETTINGS_KEYS = ['model', 'batchSize', 'delayMs', 'criteria', 'targetN'];
+const SETTINGS_KEYS = ['model', 'batchSize', 'delayMs', 'criteria', 'targetN', 'rowRanges'];
 function loadSettings() {
   for (const key of SETTINGS_KEYS) {
     const val = localStorage.getItem('as_' + key);
@@ -49,7 +72,8 @@ function getSettings() {
     batchSize: Math.max(1, parseInt($('batchSize').value, 10) || 15),
     delayMs: Math.max(0, parseInt($('delayMs').value, 10) || 1000),
     criteria: $('criteria').value.trim(),
-    targetN: Math.max(1, parseInt($('targetN').value, 10) || 100)
+    targetN: Math.max(1, parseInt($('targetN').value, 10) || 100),
+    ranges: parseRanges($('rowRanges').value)
   };
 }
 
@@ -75,7 +99,8 @@ $('fileInput').addEventListener('change', async (e) => {
 function populateMapping(columns, rows) {
   const guess = guessMapping(columns);
   fillSelect($('colTitle'), columns, guess.title);
-  fillSelect($('colCode'), columns, guess.code);
+  fillSelect($('colLink'), ['— нет —', ...columns], guess.link || '— нет —');
+  fillSelect($('colDoi'), ['— нет —', ...columns], guess.doi || '— нет —');
   fillSelect($('colAbstract'), ['— нет —', ...columns], guess.abstract || '— нет —');
   $('rowCount').textContent = rows.length;
   renderPreview(columns, rows.slice(0, 8));
@@ -126,12 +151,14 @@ $('confirmMappingBtn').addEventListener('click', async () => {
     await db.clearArticles();
   }
   const colTitle = $('colTitle').value;
-  const colCode = $('colCode').value;
+  const colLink = $('colLink').value;
+  const colDoi = $('colDoi').value;
   const colAbstract = $('colAbstract').value;
 
   const rows = parsedRows.map((r) => ({
     title: String(r[colTitle] ?? '').trim(),
-    code: String(r[colCode] ?? '').trim(),
+    link: colLink !== '— нет —' ? String(r[colLink] ?? '').trim() : '',
+    doi: colDoi !== '— нет —' ? String(r[colDoi] ?? '').trim() : '',
     abstract: colAbstract !== '— нет —' ? String(r[colAbstract] ?? '').trim() : ''
   })).filter((r) => r.title);
 
@@ -164,7 +191,7 @@ $('enrichBtn').addEventListener('click', async () => {
   const total = items.length;
   for (const item of items) {
     if (enrichStop) break;
-    const doi = extractDoi(item.code);
+    const doi = extractDoi(item.doi);
     if (doi) {
       try {
         const abstract = await fetchAbstract(doi);
@@ -216,8 +243,8 @@ function clampScore(v) {
   return Math.max(0, Math.min(100, n));
 }
 
-async function updateProgressUI() {
-  const counts = await db.getCounts();
+async function updateProgressUI(ranges) {
+  const counts = await db.getCounts(ranges);
   const total = counts.pending + counts.include + counts.maybe + counts.exclude + counts.error;
   const processed = total - counts.pending;
   $('runFill').style.width = total ? Math.round((processed / total) * 100) + '%' : '0%';
@@ -244,7 +271,10 @@ async function runScreening() {
   $('stopBtn').disabled = false;
 
   reveal('step-run');
-  const startCounts = await updateProgressUI();
+  const startCounts = await updateProgressUI(settings.ranges);
+  if (settings.ranges) {
+    log(`Ограничение по строкам файла: ${settings.ranges.map(([a, b]) => (a === b ? a : `${a}-${b}`)).join(', ')}.`);
+  }
   if (startCounts.pending > 0) {
     const batches = Math.ceil(startCounts.pending / settings.batchSize);
     const estMinutes = Math.round((batches * settings.delayMs) / 60000);
@@ -256,7 +286,7 @@ async function runScreening() {
     while (isPaused && !stopRequested) await sleep(300);
     if (stopRequested) break;
 
-    const batch = await db.getNextPending(settings.batchSize);
+    const batch = await db.getNextPending(settings.batchSize, settings.ranges);
     if (batch.length === 0) break;
 
     try {
@@ -288,7 +318,7 @@ async function runScreening() {
       }
     }
 
-    await updateProgressUI();
+    await updateProgressUI(settings.ranges);
     if (stopRequested) break;
     await sleep(settings.delayMs);
   }
@@ -296,8 +326,8 @@ async function runScreening() {
   isRunning = false;
   $('pauseBtn').disabled = true;
   $('stopBtn').disabled = true;
-  const counts = await updateProgressUI();
-  log(counts.pending > 0 ? `Остановлено. Осталось необработанных: ${counts.pending}.` : 'Анализ завершён — все статьи обработаны.');
+  const counts = await updateProgressUI(settings.ranges);
+  log(counts.pending > 0 ? `Остановлено. Осталось необработанных (в заданном диапазоне): ${counts.pending}.` : 'Анализ завершён — все статьи в заданном диапазоне обработаны.');
 
   reveal('step-results');
   await refreshResultsView();
@@ -324,7 +354,8 @@ const PAGE_SIZE = 50;
 async function refreshResultsView() {
   const decision = $('filterDecision').value;
   const search = $('searchBox').value;
-  const { total, rows } = await db.getPage({ decision, search, offset: page * PAGE_SIZE, limit: PAGE_SIZE });
+  const ranges = parseRanges($('filterRanges').value);
+  const { total, rows } = await db.getPage({ decision, search, ranges, offset: page * PAGE_SIZE, limit: PAGE_SIZE });
   renderResultsTable(rows);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   $('pageInfo').textContent = `Стр. ${page + 1} из ${totalPages} (всего ${total})`;
@@ -336,18 +367,37 @@ function renderResultsTable(rows) {
   const table = $('resultsTable');
   table.innerHTML = '';
   const thead = document.createElement('thead');
-  thead.innerHTML = '<tr><th style="width:38%">Название</th><th style="width:14%">Код</th><th style="width:8%">Оценка</th><th style="width:12%">Решение</th><th style="width:28%">Обоснование</th></tr>';
+  thead.innerHTML = '<tr><th style="width:5%">№</th><th style="width:27%">Название</th><th style="width:11%">Ссылка</th><th style="width:12%">DOI</th><th style="width:7%">Оценка</th><th style="width:12%">Решение</th><th style="width:26%">Обоснование</th></tr>';
   table.appendChild(thead);
   const tbody = document.createElement('tbody');
   for (const v of rows) {
     const tr = document.createElement('tr');
     tr.className = 'decision-' + v.decision;
+    const tdNum = document.createElement('td');
+    tdNum.textContent = v.rowNum ?? '';
     const tdTitle = document.createElement('td');
     tdTitle.className = 'title';
     tdTitle.textContent = v.title;
-    const tdCode = document.createElement('td');
-    tdCode.textContent = v.code;
-    tdCode.title = v.code;
+    const tdLink = document.createElement('td');
+    if (v.link) {
+      const a = document.createElement('a');
+      a.href = v.link;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = 'Открыть';
+      a.title = v.link;
+      tdLink.appendChild(a);
+    }
+    const tdDoi = document.createElement('td');
+    if (v.doi) {
+      const a = document.createElement('a');
+      a.href = 'https://doi.org/' + encodeURIComponent(v.doi);
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = v.doi;
+      a.title = v.doi;
+      tdDoi.appendChild(a);
+    }
     const tdScore = document.createElement('td');
     tdScore.textContent = v.score ?? '';
     const tdDecision = document.createElement('td');
@@ -355,7 +405,7 @@ function renderResultsTable(rows) {
     const tdReason = document.createElement('td');
     tdReason.textContent = v.reason;
     tdReason.title = v.reason;
-    tr.append(tdTitle, tdCode, tdScore, tdDecision, tdReason);
+    tr.append(tdNum, tdTitle, tdLink, tdDoi, tdScore, tdDecision, tdReason);
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
@@ -363,6 +413,7 @@ function renderResultsTable(rows) {
 
 $('filterDecision').addEventListener('change', () => { page = 0; refreshResultsView(); });
 $('searchBox').addEventListener('input', debounce(() => { page = 0; refreshResultsView(); }, 300));
+$('filterRanges').addEventListener('input', debounce(() => { page = 0; refreshResultsView(); }, 300));
 $('prevPageBtn').addEventListener('click', () => { page = Math.max(0, page - 1); refreshResultsView(); });
 $('nextPageBtn').addEventListener('click', () => { page += 1; refreshResultsView(); });
 
@@ -399,7 +450,7 @@ $('exportIncludedBtn').addEventListener('click', async () => {
   const all = await db.getAll();
   const rows = all.filter((r) => r.decision === 'include').sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
   if (rows.length === 0) { alert('Нет статей со статусом "Включить".'); return; }
-  downloadCsv(toCsv(rows, ['title', 'code', 'score', 'decision', 'reason']), 'включённые_статьи.csv');
+  downloadCsv(toCsv(rows, ['rowNum', 'title', 'link', 'doi', 'score', 'decision', 'reason']), 'включённые_статьи.csv');
 });
 
 $('exportTopNBtn').addEventListener('click', async () => {
@@ -409,12 +460,12 @@ $('exportTopNBtn').addEventListener('click', async () => {
   const rows = pool.slice(0, settings.targetN);
   if (rows.length === 0) { alert('Нет подходящих статей для экспорта.'); return; }
   if (rows.length < settings.targetN) alert(`Доступно только ${rows.length} статей из запрошенных ${settings.targetN}.`);
-  downloadCsv(toCsv(rows, ['title', 'code', 'score', 'decision', 'reason']), `топ-${settings.targetN}_статей.csv`);
+  downloadCsv(toCsv(rows, ['rowNum', 'title', 'link', 'doi', 'score', 'decision', 'reason']), `топ-${settings.targetN}_статей.csv`);
 });
 
 $('exportAllBtn').addEventListener('click', async () => {
   const all = await db.getAll();
-  downloadCsv(toCsv(all, ['title', 'code', 'abstract', 'score', 'decision', 'reason']), 'все_результаты.csv');
+  downloadCsv(toCsv(all, ['rowNum', 'title', 'link', 'doi', 'abstract', 'score', 'decision', 'reason']), 'все_результаты.csv');
 });
 
 $('retryErrorsBtn').addEventListener('click', async () => {

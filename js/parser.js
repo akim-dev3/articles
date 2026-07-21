@@ -20,7 +20,8 @@ export function parseFile(file) {
 }
 
 const TITLE_HINTS = ['title', 'название', 'наименование', 'article', 'статья', 'заголовок', 'name'];
-const CODE_HINTS = ['doi', 'код', 'code', 'id', 'ссылка', 'link', 'url', 'источник'];
+const LINK_HINTS = ['ссылка', 'link', 'url', 'источник'];
+const DOI_HINTS = ['doi'];
 const ABSTRACT_HINTS = ['abstract', 'аннотация', 'annotation', 'summary', 'реферат'];
 
 function guessColumn(columns, hints, fallbackIndex) {
@@ -35,7 +36,8 @@ function guessColumn(columns, hints, fallbackIndex) {
 export function guessMapping(columns) {
   return {
     title: guessColumn(columns, TITLE_HINTS, 0),
-    code: guessColumn(columns, CODE_HINTS, 1),
+    link: guessColumn(columns, LINK_HINTS, 1),
+    doi: guessColumn(columns, DOI_HINTS, 2),
     abstract: guessColumn(columns, ABSTRACT_HINTS, -1)
   };
 }

@@ -18,7 +18,8 @@
   <!-- STEP 1: upload -->
   <section class="card" id="step-upload">
     <h2>1. Загрузка списка статей</h2>
-    <p class="hint">Файл CSV или Excel (.xlsx) с колонками: название статьи, код/DOI/ссылка, и опционально — аннотация. Размер массива не ограничен — можно загрузить и 10 000 статей, они сохранятся прямо в браузере.</p>
+    <p class="hint">Файл CSV или Excel (.xlsx) с колонками: название статьи, ссылка на статью, DOI, и опционально — аннотация. Размер массива не ограничен — можно загрузить и 10 000 статей, они сохранятся прямо в браузере.</p>
+    <p class="hint">Если сохраняете таблицу из Excel как CSV, выбирайте формат «CSV UTF-8 (разделители-запятые)» — иначе русский текст в файле может отобразиться «кракозябрами». Файл .xlsx этой проблемы не имеет.</p>
     <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
     <div id="uploadInfo"></div>
 
@@ -28,8 +29,11 @@
         <label class="narrow">Название статьи
           <select id="colTitle"></select>
         </label>
-        <label class="narrow">Код / DOI / ссылка
-          <select id="colCode"></select>
+        <label class="narrow">Ссылка на статью
+          <select id="colLink"></select>
+        </label>
+        <label class="narrow">DOI
+          <select id="colDoi"></select>
         </label>
         <label class="narrow">Аннотация (если есть)
           <select id="colAbstract"></select>
@@ -43,7 +47,7 @@
   <!-- STEP 2: enrichment -->
   <section class="card hidden" id="step-enrich">
     <h2>2. Аннотации (необязательно)</h2>
-    <p class="hint">Если в файле нет аннотаций, но есть DOI, можно попробовать автоматически подтянуть аннотации через открытый сервис Semantic Scholar. Это увеличивает точность отбора, но занимает время (10 000 статей ≈ несколько часов из-за ограничений сервиса). Можно пропустить и анализировать только по названиям.</p>
+    <p class="hint">Если в файле нет аннотаций, но есть DOI, можно попробовать автоматически подтянуть аннотации из PubMed (там есть подавляющее большинство медицинских статей). Это увеличивает точность отбора, но занимает время (10 000 статей ≈ несколько часов из-за ограничений сервиса). Можно пропустить и анализировать только по названиям.</p>
     <div class="row">
       <button id="enrichBtn" class="secondary">Подтянуть аннотации по DOI</button>
       <button id="skipEnrichBtn" class="secondary">Пропустить</button>
@@ -66,6 +70,10 @@
         <input type="number" id="targetN" value="100" min="1">
       </label>
     </div>
+    <label>Обрабатывать только строки файла (необязательно)
+      <textarea id="rowRanges" rows="3" placeholder="Например:&#10;2001-3000&#10;6501-8000&#10;13001-15000&#10;21501-24000&#10;34933-40864"></textarea>
+    </label>
+    <p class="hint">Номер строки — это порядковый номер статьи в загруженном файле (первая статья после заголовка — №1). Диапазоны через запятую или каждый с новой строки, вида «начало-конец». Если оставить пустым — обрабатываются все статьи. Удобно, чтобы разбить большой файл на части (например, между несколькими людьми) или повторно обработать конкретный кусок.</p>
     <details class="advanced">
       <summary>Дополнительные настройки (для продвинутых)</summary>
       <div class="row">
@@ -128,6 +136,9 @@
       <label class="grow">Поиск по названию
         <input type="text" id="searchBox" placeholder="Поиск...">
       </label>
+      <label class="narrow">Диапазон строк
+        <input type="text" id="filterRanges" placeholder="напр. 2001-3000">
+      </label>
     </div>
     <div class="row">
       <button id="exportIncludedBtn" class="primary">Экспорт включённых (CSV)</button>
@@ -147,7 +158,7 @@
 </main>
 
 <footer class="foot">
-  <p>Загруженные статьи и результаты анализа хранятся только в вашем браузере (IndexedDB / localStorage). Ничего не отправляется на сторонние сервера, кроме прямых запросов к OpenRouter (и, при обогащении, к Semantic Scholar).</p>
+  <p>Загруженные статьи и результаты анализа хранятся только в вашем браузере (IndexedDB / localStorage). Ничего не отправляется на сторонние сервера, кроме прямых запросов к OpenRouter (и, при обогащении, к PubMed).</p>
 </footer>
 
 <script type="module" src="js/main.js"></script>

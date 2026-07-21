@@ -17,7 +17,7 @@ ${criteria}
 
 Дай также оценку релевантности score (целое число от 0 до 100, где 0 — совсем не подходит, 100 — идеально подходит) и очень краткое обоснование reason на русском языке (одно предложение).
 
-Список статей в формате JSON (id, title, code, abstract — поле abstract может отсутствовать или быть пустым):
+Список статей в формате JSON (id, title, abstract — поле abstract может отсутствовать или быть пустым):
 ${JSON.stringify(items)}
 
 Ответь СТРОГО одним JSON-объектом без markdown и без пояснений вокруг, в виде:
@@ -72,7 +72,7 @@ async function callOnce(apiKey, model, prompt, useJsonMode) {
 
 export async function screenBatch({ apiKey, model, criteria, targetN, articles }) {
   const items = articles.map((a) => {
-    const item = { id: a.id, title: a.title, code: a.code };
+    const item = { id: a.id, title: a.title };
     if (a.abstract) item.abstract = a.abstract.slice(0, 2500);
     return item;
   });
