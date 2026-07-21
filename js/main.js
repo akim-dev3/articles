@@ -7,6 +7,17 @@ import { OPENROUTER_API_KEY, DEFAULT_MODEL } from './config.js';
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Понятные человеку подписи — используются и в таблице на экране, и при экспорте в CSV
+const DECISION_LABELS = { include: 'Включить', maybe: 'Под вопросом', exclude: 'Исключить', error: 'Ошибка', pending: 'В очереди' };
+const FIELD_LABELS = {
+  title: 'Название статьи',
+  code: 'Код / DOI / ссылка',
+  abstract: 'Аннотация',
+  score: 'Оценка релевантности (0-100)',
+  decision: 'Решение',
+  reason: 'Обоснование'
+};
+
 const STEPS = ['step-upload', 'step-enrich', 'step-criteria', 'step-run', 'step-results'];
 function reveal(id) {
   const idx = STEPS.indexOf(id);
@@ -233,7 +244,12 @@ async function runScreening() {
   $('stopBtn').disabled = false;
 
   reveal('step-run');
-  await updateProgressUI();
+  const startCounts = await updateProgressUI();
+  if (startCounts.pending > 0) {
+    const batches = Math.ceil(startCounts.pending / settings.batchSize);
+    const estMinutes = Math.round((batches * settings.delayMs) / 60000);
+    log(`В очереди ${startCounts.pending} статей, это примерно ${batches} запросов к нейросети — не быстрее чем за ${estMinutes} мин. (можно закрыть вкладку и продолжить позже, прогресс сохраняется).`);
+  }
 
   while (true) {
     if (stopRequested) break;
@@ -323,7 +339,6 @@ function renderResultsTable(rows) {
   thead.innerHTML = '<tr><th style="width:38%">Название</th><th style="width:14%">Код</th><th style="width:8%">Оценка</th><th style="width:12%">Решение</th><th style="width:28%">Обоснование</th></tr>';
   table.appendChild(thead);
   const tbody = document.createElement('tbody');
-  const labels = { include: 'Включить', maybe: 'Под вопросом', exclude: 'Исключить', error: 'Ошибка', pending: 'В очереди' };
   for (const v of rows) {
     const tr = document.createElement('tr');
     tr.className = 'decision-' + v.decision;
@@ -336,7 +351,7 @@ function renderResultsTable(rows) {
     const tdScore = document.createElement('td');
     tdScore.textContent = v.score ?? '';
     const tdDecision = document.createElement('td');
-    tdDecision.textContent = labels[v.decision] || v.decision;
+    tdDecision.textContent = DECISION_LABELS[v.decision] || v.decision;
     const tdReason = document.createElement('td');
     tdReason.textContent = v.reason;
     tdReason.title = v.reason;
@@ -363,8 +378,9 @@ function toCsv(rows, fields) {
     if (/[",\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
     return s;
   };
-  const header = fields.map(escape).join(',');
-  const lines = rows.map((r) => fields.map((f) => escape(r[f])).join(','));
+  const valueFor = (r, f) => (f === 'decision' ? (DECISION_LABELS[r.decision] || r.decision) : r[f]);
+  const header = fields.map((f) => escape(FIELD_LABELS[f] || f)).join(',');
+  const lines = rows.map((r) => fields.map((f) => escape(valueFor(r, f))).join(','));
   return '﻿' + [header, ...lines].join('\n');
 }
 
@@ -383,7 +399,7 @@ $('exportIncludedBtn').addEventListener('click', async () => {
   const all = await db.getAll();
   const rows = all.filter((r) => r.decision === 'include').sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
   if (rows.length === 0) { alert('Нет статей со статусом "Включить".'); return; }
-  downloadCsv(toCsv(rows, ['title', 'code', 'score', 'decision', 'reason']), 'included.csv');
+  downloadCsv(toCsv(rows, ['title', 'code', 'score', 'decision', 'reason']), 'включённые_статьи.csv');
 });
 
 $('exportTopNBtn').addEventListener('click', async () => {
@@ -393,12 +409,12 @@ $('exportTopNBtn').addEventListener('click', async () => {
   const rows = pool.slice(0, settings.targetN);
   if (rows.length === 0) { alert('Нет подходящих статей для экспорта.'); return; }
   if (rows.length < settings.targetN) alert(`Доступно только ${rows.length} статей из запрошенных ${settings.targetN}.`);
-  downloadCsv(toCsv(rows, ['title', 'code', 'score', 'decision', 'reason']), `top-${settings.targetN}.csv`);
+  downloadCsv(toCsv(rows, ['title', 'code', 'score', 'decision', 'reason']), `топ-${settings.targetN}_статей.csv`);
 });
 
 $('exportAllBtn').addEventListener('click', async () => {
   const all = await db.getAll();
-  downloadCsv(toCsv(all, ['title', 'code', 'abstract', 'score', 'decision', 'reason']), 'all-results.csv');
+  downloadCsv(toCsv(all, ['title', 'code', 'abstract', 'score', 'decision', 'reason']), 'все_результаты.csv');
 });
 
 $('retryErrorsBtn').addEventListener('click', async () => {
